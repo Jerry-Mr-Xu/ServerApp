@@ -4,12 +4,16 @@ import android.app.Service;
 import android.content.Intent;
 import android.os.Binder;
 import android.os.IBinder;
+import android.os.RemoteCallbackList;
 import android.os.RemoteException;
 import android.support.annotation.Nullable;
 import android.util.Log;
 
+import com.jerry.clientapp.IOnBookAddedListener;
+
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 服务端Service
@@ -21,6 +25,9 @@ public class ServerService extends Service {
     private static final String TAG = ServerService.class.getSimpleName();
 
     private CopyOnWriteArrayList<Book> bookList = new CopyOnWriteArrayList<>();
+    private RemoteCallbackList<IOnBookAddedListener> listenerList = new RemoteCallbackList<>();
+    private AtomicBoolean isAlive = new AtomicBoolean(true);
+
     private Binder serverBinder = new IBookManager.Stub() {
 
         @Override
@@ -32,11 +39,86 @@ public class ServerService extends Service {
         @Override
         public void addBook(Book book) throws RemoteException {
             if (book != null) {
-                Log.e(TAG, "addBook: book = " + book.toString());
-                bookList.add(book);
+                ServerService.this.addBook(book);
             }
         }
+
+        @Override
+        public void registerListener(IOnBookAddedListener listener) throws RemoteException {
+            if (listener == null) {
+                return;
+            }
+
+            listenerList.register(listener);
+        }
+
+        @Override
+        public void unregisterListener(IOnBookAddedListener listener) throws RemoteException {
+            if (listener == null) {
+                return;
+            }
+
+            listenerList.unregister(listener);
+        }
     };
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+
+        Log.e(TAG, "onCreate: ");
+
+        new Thread(new TestThread()).start();
+    }
+
+    private class TestThread implements Runnable {
+        @Override
+        public void run() {
+            while (isAlive.get()) {
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+                Log.e(TAG, "listenerList.size = " + listenerList.getRegisteredCallbackCount());
+
+                if (listenerList.getRegisteredCallbackCount() <= 0) {
+                    continue;
+                }
+
+                Book newBook = new Book("New Book", "New Book Author", 10.6f);
+                addBook(newBook);
+            }
+        }
+    }
+
+    private void addBook(Book newBook) {
+        Log.e(TAG, "addBook: book = " + newBook.toString());
+        bookList.add(newBook);
+
+        final int num = listenerList.beginBroadcast();
+        for (int i = 0; i < num; i++) {
+            IOnBookAddedListener singleListener = listenerList.getBroadcastItem(i);
+            if (singleListener == null) {
+                continue;
+            }
+
+            try {
+                singleListener.onBookAdded(newBook);
+            } catch (RemoteException e) {
+                e.printStackTrace();
+            }
+        }
+        listenerList.finishBroadcast();
+    }
+
+    @Override
+    public void onDestroy() {
+        Log.e(TAG, "onDestroy: ");
+        isAlive.set(false);
+        super.onDestroy();
+    }
 
     @Nullable
     @Override
