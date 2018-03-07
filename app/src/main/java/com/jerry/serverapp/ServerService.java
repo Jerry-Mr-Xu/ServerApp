@@ -2,8 +2,10 @@ package com.jerry.serverapp;
 
 import android.app.Service;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Binder;
 import android.os.IBinder;
+import android.os.Parcel;
 import android.os.RemoteCallbackList;
 import android.os.RemoteException;
 import android.support.annotation.Nullable;
@@ -29,6 +31,18 @@ public class ServerService extends Service {
     private AtomicBoolean isAlive = new AtomicBoolean(true);
 
     private Binder serverBinder = new IBookManager.Stub() {
+
+        @Override
+        public boolean onTransact(int code, Parcel data, Parcel reply, int flags) throws RemoteException {
+            // 权限检测
+            int permission = checkCallingPermission("com.jerry.serverapp.permission.ACCESS_BOOK_SERVICE");
+            if (permission == PackageManager.PERMISSION_DENIED) {
+                Log.e(TAG, "onTransact: Access Denied");
+                return false;
+            }
+
+            return super.onTransact(code, data, reply, flags);
+        }
 
         @Override
         public List<Book> getBookList() throws RemoteException {
